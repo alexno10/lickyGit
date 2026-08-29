@@ -84,6 +84,37 @@ def _classify_encoding(token: str) -> str:
     return "unknown"
 
 
+_URL_RE = re.compile(r"https?://", re.IGNORECASE)
+
+# Context window: how many chars before/after a token to inspect
+_CTX_WINDOW = 60
+
+
+def _is_likely_non_secret(token: str, content: str, start: int, end: int) -> bool:
+    """Return *True* if the token is probably NOT a secret.
+
+    Heuristics:
+    - Token is embedded inside a URL (https://...)
+    - Token contains path separators (/) suggesting a file path or URL path
+    - Token looks like a version string, commit hash in a lockfile context, etc.
+    """
+    # Check a small window around the token for URL context
+    ctx_start = max(0, start - _CTX_WINDOW)
+    ctx = content[ctx_start:end]
+    if _URL_RE.search(ctx):
+        return True
+
+    # Path-like: contains slashes (URL paths, file paths)
+    if "/" in token and token.count("/") >= 2:
+        return True
+
+    # Contains dashes like a slug/package-name (e.g. x86_64-unknown-linux-gnu)
+    if "-" in token and token.count("-") >= 2:
+        return True
+
+    return False
+
+
 def find_high_entropy_strings(
     content: str,
     *,
@@ -94,8 +125,8 @@ def find_high_entropy_strings(
     """Find substrings in *content* whose Shannon entropy exceeds threshold.
 
     Two passes are performed:
-    1. Hex tokens  (threshold default **3.0** — random hex ≈ 4.0)
-    2. Base64 tokens (threshold default **4.5** — random base64 ≈ 5.17)
+    1. Hex tokens  (threshold default **3.0** - random hex ~ 4.0)
+    2. Base64 tokens (threshold default **4.5** - random base64 ~ 5.17)
 
     Overlapping matches are deduplicated in favour of the higher-entropy one.
     """
@@ -112,6 +143,10 @@ def find_high_entropy_strings(
 
             ent = calculate_shannon_entropy(token)
             if ent < threshold:
+                continue
+
+            # Filter out URLs, file paths, package slugs
+            if _is_likely_non_secret(token, content, m.start(), m.end()):
                 continue
 
             key = (m.start(), m.end())

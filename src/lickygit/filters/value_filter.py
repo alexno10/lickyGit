@@ -12,19 +12,35 @@ _DEFAULT_EXCLUDED_LOWER: set[str] = {
     "password", "secret", "token", "passw0rd", "value", "val", "values",
     "string", "text", "var", "variable", "lambda", "function", "func", "callback", "handler",
     "latest", "stable", "nightly", "write", "read", "all", "root", "nobody",
+    "required", "optional", "needed", "default",
 }
 
 _FALSE_PREFIXES: tuple[str, ...] = (
     "your-", "your_", "my-", "my_", "<", "${", "%(", "{{",
     "example", "test", "dummy", "sample", "fake", "mock", "lambda", "func",
-    "os.getenv", "os.environ", "process.env", "sys.getenv", "System.getenv",
-    "env(", "getenv(", "config(", "dotenv(", "settings.", "params.",
-    "self.", "request.", "update.", "ctx.", "context.", "auth.",
+    # Python env loaders
+    "os.getenv", "os.environ", "process.env", "sys.getenv", "system.getenv",
+    # Rust env loaders
+    "std::env::var", "std::env::var_os", "env::var", "env::var_os",
+    # Go env loaders
+    "os.getenv", "os.lookupenv",
+    # Generic config loaders
+    "env(", "getenv(", "config(", "config.", "dotenv(", "settings.", "params.",
+    "cfg.", "conf.", "options.", "opts.", "props.", "properties.",
+    "self.", "this.", "request.", "update.", "ctx.", "context.", "auth.",
     "str(", "int(", "bool(", "dict(", "list(", "set(",
+    # Type annotations
+    "&str", "&[", "option<", "some(", "vec<", "box<", "arc<", "rc<",
+    "string>", "result<", "hashmap<",
+    # Doc / placeholder
+    "...", "your ", "insert ",
+    # URLs (not secrets)
+    "http://", "https://github.com", "https://docs.", "https://www.",
 )
 
 _FALSE_SUFFIXES: tuple[str, ...] = (
     ">", "}", ")", "...", "here", "_test", "-test",
+    ">()", ">>", ">();",
 )
 
 
@@ -69,6 +85,11 @@ class ValueFilter:
 
         # All asterisks (masked values)
         if set(v) == {"*"}:
+            return False
+
+        # Value looks like a code expression (has parens, angle brackets, pipes)
+        code_chars = sum(1 for c in v if c in "<>(){}|&;")
+        if code_chars >= 2:
             return False
 
         return True
