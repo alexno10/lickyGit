@@ -62,25 +62,34 @@ runs:
     - name: Run lickyGit Scan
       id: scan
       shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_SEVERITY: ${{ inputs.severity }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_HEAD_ONLY: ${{ inputs.head-only }}
+        INPUT_STAGED: ${{ inputs.staged }}
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
       run: |
-        ARGS="${{ inputs.path }} --severity ${{ inputs.severity }} --format ${{ inputs.format }}"
+        ARGS="${INPUT_PATH} --severity ${INPUT_SEVERITY} --format ${INPUT_FORMAT}"
         
-        if [ "${{ inputs.head-only }}" = "true" ]; then
+        if [ "${INPUT_HEAD_ONLY}" = "true" ]; then
           ARGS="$ARGS --head-only"
         fi
         
-        if [ "${{ inputs.staged }}" = "true" ]; then
+        if [ "${INPUT_STAGED}" = "true" ]; then
           ARGS="$ARGS --staged"
         fi
         
-        if [ -n "${{ inputs.output }}" ]; then
-          ARGS="$ARGS -o ${{ inputs.output }}"
-        elif [ "${{ inputs.upload-sarif }}" = "true" ]; then
+        if [ -n "${INPUT_OUTPUT}" ]; then
+          ARGS="$ARGS -o ${INPUT_OUTPUT}"
+        elif [ "${INPUT_UPLOAD_SARIF}" = "true" ]; then
           ARGS="$ARGS -f sarif -o lickygit-results.sarif"
         fi
         
-        if [ -n "${{ inputs.baseline }}" ]; then
-          ARGS="$ARGS --baseline ${{ inputs.baseline }}"
+        if [ -n "${INPUT_BASELINE}" ]; then
+          ARGS="$ARGS --baseline ${INPUT_BASELINE}"
         fi
 
         echo "Running: lickygit scan $ARGS"
@@ -89,7 +98,7 @@ runs:
         EXIT_CODE=$?
         echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
         
-        if [ "$EXIT_CODE" -ne 0 ] && [ "${{ inputs.upload-sarif }}" != "true" ]; then
+        if [ "$EXIT_CODE" -ne 0 ] && [ "${INPUT_UPLOAD_SARIF}" != "true" ]; then
           exit $EXIT_CODE
         fi
 
@@ -102,8 +111,10 @@ runs:
 
     - name: Check Final Status
       shell: bash
+      env:
+        SCAN_EXIT_CODE: ${{ steps.scan.outputs.exit_code }}
       run: |
-        if [ "${{ steps.scan.outputs.exit_code }}" -ne 0 ]; then
+        if [ "${SCAN_EXIT_CODE}" -ne 0 ]; then
           echo "::error::lickyGit identified secrets in this repository."
-          exit ${{ steps.scan.outputs.exit_code }}
+          exit ${SCAN_EXIT_CODE}
         fi

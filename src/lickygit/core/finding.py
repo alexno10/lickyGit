@@ -81,5 +81,5 @@ class Finding:
             loc += f":{self.line_number}"
         return (
             f"[{self.severity.value}] {self.rule_name} in {loc} "
-            f"({self.redacted_value}) @ {self.commit_sha[:8]}"
+            f"({self.redacted_value}) @ {(self.commit_sha or 'N/A')[:8]}"
         )

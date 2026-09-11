@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import shutil
 import sys
 from pathlib import Path
 
 import click
 from rich.console import Console
 
-from lickygit.config import ScanConfig, load_config, merge_configs
+from lickygit.config import ScanConfig, load_config, merge_configs, validate_config
 from lickygit.core.finding import Severity
 from lickygit.core.git_walker import GitWalker, GitWalkerError, safe_rmtree
 from lickygit.core.scanner import ScanResult, Scanner
@@ -47,7 +46,7 @@ def main(ctx: click.Context) -> None:
 @click.option("--staged", is_flag=True, help="Scan staged changes in Git index (ideal for pre-commit).")
 @click.option(
     "--format", "-f", "output_format",
-    type=click.Choice(["terminal", "json", "csv", "sarif", "html"], case_sensitive=False),
+    type=click.Choice(["terminal", "json", "csv", "sarif", "html", "gitlab"], case_sensitive=False),
     default=None, help="Output format (default: terminal).",
 )
 @click.option("--output", "-o", "output_file", default=None, type=click.Path(), help="Output file path.")
@@ -60,6 +59,13 @@ def main(ctx: click.Context) -> None:
     type=click.Choice(["low", "medium", "high", "critical"], case_sensitive=False),
     default=None, help="Minimum severity to report.",
 )
+@click.option(
+    "--fail-on-severity",
+    type=click.Choice(["low", "medium", "high", "critical"], case_sensitive=False),
+    default=None, help="Exit 1 only if findings at this severity or above exist.",
+)
+@click.option("--since-commit", default=None, help="Only scan commits after this SHA (incremental).")
+@click.option("--diff", "diff_base", default=None, help="Only scan commits in DIFF_BASE..HEAD (PR scanning).")
 @click.option("--no-entropy", is_flag=True, help="Disable entropy detection.")
 @click.option("--no-keywords", is_flag=True, help="Disable keyword detection.")
 @click.option("--no-builtin-rules", is_flag=True, help="Disable built-in patterns.")
@@ -83,6 +89,9 @@ def scan(
     no_banner: bool,
     verbose: bool,
     severity: str | None,
+    fail_on_severity: str | None,
+    since_commit: str | None,
+    diff_base: str | None,
     no_entropy: bool,
     no_keywords: bool,
     no_builtin_rules: bool,
@@ -121,6 +130,12 @@ def scan(
         cli["verbose"] = True
     if severity is not None:
         cli["min_severity"] = _SEVERITY_MAP[severity.lower()]
+    if fail_on_severity is not None:
+        cli["fail_on_severity"] = _SEVERITY_MAP[fail_on_severity.lower()]
+    if since_commit:
+        cli["since_commit"] = since_commit
+    if diff_base:
+        cli["diff_base"] = diff_base
     if no_entropy:
         cli["use_entropy"] = False
     if no_keywords:
@@ -199,6 +214,8 @@ def scan(
         min_severity=cfg.min_severity,
         baseline_path=cfg.baseline_path,
         generate_baseline_path=cfg.generate_baseline_path,
+        since_commit=cfg.since_commit,
+        diff_base=cfg.diff_base,
     )
 
     try:
@@ -218,7 +235,11 @@ def scan(
     _output_results(result, cfg)
 
     # ── 8. Exit code ───────────────────────────────────────────────────
-    sys.exit(1 if result.has_findings else 0)
+    if cfg.fail_on_severity is not None:
+        # Smart exit: only fail if findings at specified severity or above
+        sys.exit(1 if result.has_findings_at_or_above(cfg.fail_on_severity) else 0)
+    else:
+        sys.exit(1 if result.has_findings else 0)
 
 
 def _output_results(result: ScanResult, cfg: ScanConfig) -> None:
@@ -264,6 +285,73 @@ def _output_results(result: ScanResult, cfg: ScanConfig) -> None:
         out = cfg.output_file or "lickygit-report.html"
         f.write(result, out)
         console.print(f"[green]HTML report written to {out}[/green]")
+
+    elif fmt == "gitlab":
+        from lickygit.output.gitlab_fmt import GitlabCodeQualityFormatter
+        f = GitlabCodeQualityFormatter()
+        out = cfg.output_file or "gl-code-quality-report.json"
+        f.write(result, out)
+        console.print(f"[green]GitLab Code Quality report written to {out}[/green]")
+
+
+# ====================================================================== #
+# config commands
+# ====================================================================== #
+
+@main.group()
+def config() -> None:
+    """Manage lickyGit configuration."""
+
+
+@config.command("check")
+@click.option("--config", "-c", "config_path", default=None, type=click.Path(exists=True), help="Config file path.")
+def config_check(config_path: str | None) -> None:
+    """Validate the configuration file and report warnings."""
+    from lickygit.config import _find_config_file, _load_toml
+
+    if config_path:
+        p = Path(config_path)
+    else:
+        p = _find_config_file()
+
+    if p is None or not p.is_file():
+        console.print("[yellow]No .lickygit.toml found.[/yellow]")
+        sys.exit(0)
+
+    console.print(f"[cyan]Checking[/cyan] {p}")
+    try:
+        data = _load_toml(p)
+    except Exception as exc:
+        console.print(f"[red]Error parsing TOML:[/red] {exc}")
+        sys.exit(2)
+
+    warnings = validate_config(data)
+    if warnings:
+        for w in warnings:
+            console.print(f"  [yellow]Warning:[/yellow] {w}")
+        console.print(f"\n[yellow]{len(warnings)} warning(s) found.[/yellow]")
+        sys.exit(1)
+    else:
+        console.print("[bold green]Configuration is valid![/bold green]")
+
+
+@config.command("show")
+@click.option("--config", "-c", "config_path", default=None, type=click.Path(exists=True), help="Config file path.")
+def config_show(config_path: str | None) -> None:
+    """Show the effective (merged) configuration."""
+    try:
+        cfg = load_config(config_path)
+    except FileNotFoundError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        sys.exit(2)
+
+    from dataclasses import fields
+    console.print("[bold]Effective Configuration[/bold]\n")
+    for f in fields(cfg):
+        val = getattr(cfg, f.name)
+        if isinstance(val, Severity):
+            val = val.value
+        console.print(f"  [cyan]{f.name}[/cyan] = {val}")
 
 
 # ====================================================================== #

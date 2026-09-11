@@ -7,14 +7,22 @@ import re
 from lickygit.core.finding import Severity
 from lickygit.detection.patterns import PatternRule
 
+_BUILTIN_RULES_CACHE: list[PatternRule] | None = None
+
 
 def get_builtin_rules() -> list[PatternRule]:
     """Return the full set of built-in pattern rules.
 
     Each rule targets a specific, well-known secret format from cloud
     providers, SaaS APIs and common credential patterns.
+
+    Rules are compiled once and cached for the lifetime of the process.
     """
-    return [
+    global _BUILTIN_RULES_CACHE
+    if _BUILTIN_RULES_CACHE is not None:
+        return list(_BUILTIN_RULES_CACHE)
+
+    _BUILTIN_RULES_CACHE = [
         # ── AWS ────────────────────────────────────────────────────────
         PatternRule(
             id="aws-access-key-id",
@@ -284,3 +292,4 @@ def get_builtin_rules() -> list[PatternRule]:
             description="Square (Block) OAuth access token.",
         ),
     ]
+    return list(_BUILTIN_RULES_CACHE)

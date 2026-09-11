@@ -37,7 +37,12 @@ class AllowList:
     @staticmethod
     def _prepare(entry: AllowListEntry) -> tuple[AllowListEntry, re.Pattern[str] | None]:
         if entry.is_regex:
-            return entry, re.compile(entry.pattern)
+            try:
+                return entry, re.compile(entry.pattern)
+            except re.error:
+                import warnings
+                warnings.warn(f"Invalid regex in allowlist, skipping: '{entry.pattern}'")
+                return entry, None
         return entry, None
 
     # ------------------------------------------------------------------ #
@@ -104,9 +109,10 @@ class AllowList:
 
     def is_allowed(self, finding: Finding) -> bool:
         """Return *True* if the finding matches any allowlist entry."""
+        file_path = finding.file_path.replace("\\", "/")
         for entry, compiled_re in self._compiled:
             # Scope check
-            if entry.scope and not fnmatch(finding.file_path, entry.scope):
+            if entry.scope and not fnmatch(file_path, entry.scope):
                 continue
 
             # Match check

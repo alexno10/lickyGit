@@ -32,11 +32,18 @@ def _rules_from_dicts(raw_rules: list[dict[str, str]]) -> list[PatternRule]:
         if not rule_id or not pattern_str:
             continue  # skip incomplete entries
 
+        try:
+            compiled = re.compile(pattern_str)
+        except re.error as exc:
+            import warnings
+            warnings.warn(f"Skipping rule '{rule_id}': invalid regex: {exc}")
+            continue
+
         rules.append(
             PatternRule(
                 id=rule_id,
                 name=name,
-                pattern=re.compile(pattern_str),
+                pattern=compiled,
                 severity=_parse_severity(severity_str),
                 description=description,
             )

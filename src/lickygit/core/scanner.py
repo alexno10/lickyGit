@@ -30,6 +30,8 @@ class ScanConfig:
     max_file_size: int = DEFAULT_MAX_FILE_SIZE
     baseline_path: str | None = None
     generate_baseline_path: str | None = None
+    since_commit: str | None = None
+    diff_base: str | None = None
 
 
 @dataclass
@@ -53,6 +55,10 @@ class ScanResult:
     @property
     def has_findings(self) -> bool:
         return len(self.findings) > 0
+
+    def has_findings_at_or_above(self, severity: Severity) -> bool:
+        """Return *True* if any finding meets or exceeds *severity*."""
+        return any(f.severity >= severity for f in self.findings)
 
 
 class Scanner:
@@ -97,6 +103,8 @@ class Scanner:
             self.config.repo_path,
             head_only=self.config.head_only,
             staged=self.config.staged,
+            since_commit=self.config.since_commit,
+            diff_base=self.config.diff_base,
         )
         revisions = walker.get_revisions()
 
@@ -116,6 +124,8 @@ class Scanner:
                     self.config.repo_path,
                     head_only=self.config.head_only,
                     staged=self.config.staged,
+                    since_commit=self.config.since_commit,
+                    diff_base=self.config.diff_base,
                 )
                 return self._scan_revision(local_walker, sha)
 

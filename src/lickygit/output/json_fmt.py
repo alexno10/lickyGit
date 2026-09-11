@@ -31,4 +31,6 @@ class JsonFormatter:
 
     def write(self, result: ScanResult, path: str | Path) -> None:
         """Write JSON output to a file."""
-        Path(path).write_text(self.format(result), encoding="utf-8")
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(self.format(result), encoding="utf-8")

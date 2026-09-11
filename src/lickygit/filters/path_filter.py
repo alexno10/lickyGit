@@ -48,17 +48,18 @@ class PathFilter:
 
     def should_scan(self, file_path: str) -> bool:
         """Return *True* if *file_path* should be scanned."""
-        from pathlib import Path
-        name = Path(file_path).name
+        # Normalize to forward slashes for cross-platform fnmatch
+        normalized = file_path.replace("\\", "/")
+        name = normalized.rsplit("/", 1)[-1]
 
         # Include patterns override excludes
         if self.include_patterns:
-            if any(fnmatch(file_path, pat) or fnmatch(name, pat) for pat in self.include_patterns):
+            if any(fnmatch(normalized, pat) or fnmatch(name, pat) for pat in self.include_patterns):
                 return True
 
         # Check excludes against both relative path and basename
         for pat in self.exclude_patterns:
-            if fnmatch(file_path, pat) or fnmatch(name, pat):
+            if fnmatch(normalized, pat) or fnmatch(name, pat):
                 return False
 
         return True

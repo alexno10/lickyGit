@@ -54,10 +54,14 @@ class GitWalker:
         repo_path: str | Path,
         head_only: bool = False,
         staged: bool = False,
+        since_commit: str | None = None,
+        diff_base: str | None = None,
     ) -> None:
         self.repo_path = Path(repo_path).resolve()
         self.head_only = head_only
         self.staged = staged
+        self.since_commit = since_commit
+        self.diff_base = diff_base
         try:
             self.repo = Repo(self.repo_path)
         except InvalidGitRepositoryError as exc:
@@ -76,6 +80,8 @@ class GitWalker:
 
         If *staged* is ``True``, returns a sentinel ``["STAGED"]``.
         If *head_only* is ``True``, returns only ``HEAD``.
+        If *diff_base* is set, returns commits in ``diff_base..HEAD``.
+        If *since_commit* is set, returns commits in ``since_commit..HEAD``.
         Otherwise returns **all** reachable commits.
         """
         if self.staged:
@@ -84,6 +90,20 @@ class GitWalker:
         if self.head_only:
             try:
                 return [self.repo.head.commit.hexsha]
+            except Exception:
+                return []
+
+        # Diff-aware PR scanning: only commits in the range
+        if self.diff_base:
+            try:
+                return [c.hexsha for c in self.repo.iter_commits(f"{self.diff_base}..HEAD")]
+            except Exception:
+                return []
+
+        # Incremental scanning: only new commits since a point
+        if self.since_commit:
+            try:
+                return [c.hexsha for c in self.repo.iter_commits(f"{self.since_commit}..HEAD")]
             except Exception:
                 return []
 
@@ -107,7 +127,8 @@ class GitWalker:
             # If HEAD exists, only inspect files with staged additions/modifications
             staged_paths: set[str] | None = None
             try:
-                diffs = self.repo.head.commit.diff()
+                # Compare index against HEAD to find what's actually staged
+                diffs = self.repo.index.diff("HEAD")
                 staged_paths = {
                     d.b_path or d.a_path
                     for d in diffs

@@ -21,27 +21,32 @@ class SarifFormatter:
 
     def format(self, result: ScanResult) -> str:  # noqa: A003
         """Return a SARIF JSON string."""
-        # Collect unique rules
+        # Collect unique rules with O(1) index lookup
         rules_seen: dict[str, dict[str, str]] = {}
+        rule_to_index: dict[str, int] = {}
         sarif_results: list[dict[str, object]] = []
 
         for f in result.findings:
-            if f.rule_id not in rules_seen:
+            if f.rule_id not in rule_to_index:
+                rule_to_index[f.rule_id] = len(rule_to_index)
                 rules_seen[f.rule_id] = {
                     "id": f.rule_id,
                     "name": f.rule_name,
                     "shortDescription": {"text": f.rule_name},
                 }
 
-            rule_index = list(rules_seen.keys()).index(f.rule_id)
+            rule_index = rule_to_index[f.rule_id]
 
             region: dict[str, object] = {}
             if f.line_number is not None:
                 region["startLine"] = f.line_number
 
+            # SARIF spec requires forward-slash URIs
+            uri = f.file_path.replace("\\", "/")
+
             location: dict[str, object] = {
                 "physicalLocation": {
-                    "artifactLocation": {"uri": f.file_path},
+                    "artifactLocation": {"uri": uri},
                     "region": region,
                 }
             }
@@ -55,7 +60,7 @@ class SarifFormatter:
                 },
                 "locations": [location],
                 "properties": {
-                    "commitSha": f.commit_sha,
+                    "commitSha": f.commit_sha or "",
                     "commitAuthor": f.commit_author,
                     "detectionType": f.detection_type.value,
                 },
@@ -69,7 +74,7 @@ class SarifFormatter:
                     "tool": {
                         "driver": {
                             "name": "lickyGit",
-                            "version": "1.0.0",
+                            "version": "1.1.0",
                             "informationUri": "https://github.com/alexno10/lickyGit",
                             "rules": list(rules_seen.values()),
                         }
@@ -83,4 +88,6 @@ class SarifFormatter:
 
     def write(self, result: ScanResult, path: str | Path) -> None:
         """Write SARIF output to a file."""
-        Path(path).write_text(self.format(result), encoding="utf-8")
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(self.format(result), encoding="utf-8")

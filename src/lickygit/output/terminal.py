@@ -98,7 +98,7 @@ class TerminalFormatter:
             ]
             if self.verbose:
                 row.extend([
-                    f.commit_sha[:8],
+                    (f.commit_sha or "N/A")[:8],
                     f.commit_author,
                     f.line_content[:80],
                 ])

@@ -33,7 +33,7 @@ class HtmlReportFormatter:
               <td>{html.escape(f.rule_name)}</td>
               <td>{html.escape(f.file_path)}{(':' + str(f.line_number)) if f.line_number else ''}</td>
               <td><code>{html.escape(f.redacted_value)}</code></td>
-              <td><code>{html.escape(f.commit_sha[:8])}</code></td>
+              <td><code>{html.escape((f.commit_sha or "N/A")[:8])}</code></td>
               <td>{html.escape(f.commit_author)}</td>
               <td>{html.escape(f.detection_type.value)}</td>
             </tr>"""
@@ -100,4 +100,6 @@ function filterTable() {{
 
     def write(self, result: ScanResult, path: str | Path) -> None:
         """Write HTML report to a file."""
-        Path(path).write_text(self.format(result), encoding="utf-8")
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(self.format(result), encoding="utf-8")
